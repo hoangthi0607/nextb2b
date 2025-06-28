@@ -1,0 +1,461 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum EnterpriseType {
+  buyer
+  seller
+}
+
+enum EnterpriseStatus {
+  pending
+  active
+  blocked
+}
+
+enum UserStatus {
+  active
+  inactive
+}
+
+enum ProductStatus {
+  active
+  inactive
+}
+
+enum QuotationRequestStatus {
+  pending
+  responded
+  closed
+}
+
+enum QuotationStatus {
+  pending
+  accepted
+  rejected
+}
+
+enum OrderStatus {
+  pending_approval
+  approved
+  processing
+  shipped
+  delivered
+  cancelled
+}
+
+enum ApprovalStatus {
+  pending
+  approved
+  rejected
+}
+
+enum ShipmentStatus {
+  preparing
+  shipped
+  in_transit
+  delivered
+  cancelled
+}
+
+enum InvoiceStatus {
+  issued
+  paid
+  cancelled
+}
+
+enum PaymentStatus {
+  pending
+  completed
+  failed
+}
+
+enum ActionType {
+  create
+  update
+  approve
+  reject
+  delete
+}
+
+model Admin {
+  id           String         @id @default(uuid())
+  username     String         @unique
+  password     String
+  fullName     String
+  email        String
+  phone        String
+  createdAt    DateTime       @default(now())
+  enterprises  Enterprise[]   @relation("EnterpriseApproval")
+  RefreshToken RefreshToken[]
+}
+
+model Enterprise {
+  id                String           @id @default(uuid())
+  name              String
+  address           String
+  taxCode           String
+  phone             String
+  email             String
+  type              EnterpriseType
+  status            EnterpriseStatus
+  description       String?
+  createdAt         DateTime         @default(now())
+  approvedByAdminId String?
+  approvedByAdmin   Admin?           @relation("EnterpriseApproval", fields: [approvedByAdminId], references: [id])
+
+  users                    User[]
+  products                 Product[]
+  quotationRequests        QuotationRequest[]         @relation("BuyerRequests")
+  quotations               Quotation[]                @relation("SellerQuotations")
+  ordersAsBuyer            Order[]                    @relation("OrdersByBuyer")
+  ordersAsSeller           Order[]                    @relation("OrdersBySeller")
+  warehouses               Warehouse[]
+  inventories              Inventory[]
+  purchaseRequests         PurchaseRequest[]
+  QuotationRequestSupplier QuotationRequestSupplier[]
+}
+
+model User {
+  id           String     @id @default(uuid())
+  enterpriseId String
+  username     String     @unique
+  password     String
+  fullName     String
+  email        String
+  phone        String
+  status       UserStatus
+  createdAt    DateTime   @default(now())
+  enterprise   Enterprise @relation(fields: [enterpriseId], references: [id])
+
+  roles            UserRole[]
+  approvals        InternalApproval[] @relation("UserApprovals")
+  shipments        Shipment[]         @relation("WarehouseStaff")
+  activityLogs     ActivityLog[]
+  purchaseRequests PurchaseRequest[]  @relation("RequestedBy")
+  RefreshToken     RefreshToken[]
+}
+
+model Role {
+  id             String           @id @default(uuid())
+  name           String           @unique
+  users          UserRole[]
+  RolePermission RolePermission[]
+}
+
+model UserRole {
+  userId String
+  roleId String
+  user   User   @relation(fields: [userId], references: [id])
+  role   Role   @relation(fields: [roleId], references: [id])
+
+  @@id([userId, roleId])
+}
+
+model Permission {
+  id    String           @id @default(uuid())
+  name  String           @unique
+  roles RolePermission[]
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [id])
+  permission   Permission @relation(fields: [permissionId], references: [id])
+
+  @@id([roleId, permissionId])
+}
+
+model Category {
+  id               String     @id @default(uuid())
+  name             String
+  description      String?
+  parentCategoryId String?
+  parentCategory   Category?  @relation("CategoryHierarchy", fields: [parentCategoryId], references: [id])
+  subcategories    Category[] @relation("CategoryHierarchy")
+  products         Product[]
+}
+
+model Brand {
+  id          String    @id @default(uuid())
+  name        String
+  description String?
+  products    Product[]
+}
+
+model ProductUnit {
+  id          String    @id @default(uuid())
+  name        String    @unique
+  description String?
+  products    Product[]
+}
+
+model Product {
+  id              String        @id @default(uuid())
+  name            String
+  description     String?
+  price           Float
+  quantityInStock Int
+  status          ProductStatus
+  createdAt       DateTime      @default(now())
+
+  enterpriseId String
+  enterprise   Enterprise @relation(fields: [enterpriseId], references: [id])
+
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id])
+
+  brandId String
+  brand   Brand  @relation(fields: [brandId], references: [id])
+
+  unitId String
+  unit   ProductUnit @relation(fields: [unitId], references: [id])
+
+  quotationRequestDetails QuotationRequestDetail[]
+  quotationDetails        QuotationDetail[]
+  orderDetails            OrderDetail[]
+  inventories             Inventory[]
+  ProductImage            ProductImage[]
+}
+
+model ProductImage {
+  id        String  @id @default(uuid())
+  sortOrder Int
+  productId String
+  imageUrl  String
+  product   Product @relation(fields: [productId], references: [id])
+}
+
+model QuotationRequest {
+  id        String                 @id @default(uuid())
+  title     String
+  status    QuotationRequestStatus
+  createdAt DateTime               @default(now())
+
+  buyerEnterpriseId String
+  buyerEnterprise   Enterprise @relation("BuyerRequests", fields: [buyerEnterpriseId], references: [id])
+
+  details    QuotationRequestDetail[]
+  suppliers  QuotationRequestSupplier[]
+  quotations Quotation[]
+}
+
+model QuotationRequestDetail {
+  id                 String @id @default(uuid())
+  quotationRequestId String
+  productId          String
+  quantity           Int
+
+  quotationRequest QuotationRequest @relation(fields: [quotationRequestId], references: [id])
+  product          Product          @relation(fields: [productId], references: [id])
+}
+
+model QuotationRequestSupplier {
+  quotationRequestId String
+  sellerEnterpriseId String
+  quotationRequest   QuotationRequest @relation(fields: [quotationRequestId], references: [id])
+  sellerEnterprise   Enterprise       @relation(fields: [sellerEnterpriseId], references: [id])
+
+  @@id([quotationRequestId, sellerEnterpriseId])
+}
+
+model Quotation {
+  id                 String          @id @default(uuid())
+  quotationRequestId String
+  sellerEnterpriseId String
+  status             QuotationStatus
+  totalAmount        Float
+  validUntil         DateTime
+  createdAt          DateTime        @default(now())
+
+  quotationRequest QuotationRequest @relation(fields: [quotationRequestId], references: [id])
+  sellerEnterprise Enterprise       @relation("SellerQuotations", fields: [sellerEnterpriseId], references: [id])
+
+  details QuotationDetail[]
+  orders  Order[]
+}
+
+model QuotationDetail {
+  id          String @id @default(uuid())
+  quotationId String
+  productId   String
+  quantity    Int
+  unitPrice   Float
+
+  quotation Quotation @relation(fields: [quotationId], references: [id])
+  product   Product   @relation(fields: [productId], references: [id])
+}
+
+model Order {
+  id                 String      @id @default(uuid())
+  quotationId        String?
+  buyerEnterpriseId  String
+  sellerEnterpriseId String
+  orderDate          DateTime
+  status             OrderStatus
+  totalAmount        Float
+  createdAt          DateTime    @default(now())
+
+  quotation        Quotation? @relation(fields: [quotationId], references: [id])
+  buyerEnterprise  Enterprise @relation("OrdersByBuyer", fields: [buyerEnterpriseId], references: [id])
+  sellerEnterprise Enterprise @relation("OrdersBySeller", fields: [sellerEnterpriseId], references: [id])
+
+  details  OrderDetail[]
+  shipment Shipment?
+  invoice  Invoice?
+}
+
+model OrderDetail {
+  id        String @id @default(uuid())
+  orderId   String
+  productId String
+  quantity  Int
+  unitPrice Float
+
+  order   Order   @relation(fields: [orderId], references: [id])
+  product Product @relation(fields: [productId], references: [id])
+}
+
+model PurchaseRequest {
+  id                String         @id @default(uuid())
+  buyerEnterpriseId String
+  requestedByUserId String
+  status            ApprovalStatus
+  createdAt         DateTime       @default(now())
+
+  buyerEnterprise Enterprise         @relation(fields: [buyerEnterpriseId], references: [id])
+  requestedBy     User               @relation("RequestedBy", fields: [requestedByUserId], references: [id])
+  approvals       InternalApproval[]
+}
+
+model InternalApproval {
+  id                String         @id @default(uuid())
+  purchaseRequestId String
+  approverUserId    String
+  level             Int
+  status            ApprovalStatus
+  approvalDate      DateTime
+  notes             String?
+
+  purchaseRequest PurchaseRequest @relation(fields: [purchaseRequestId], references: [id])
+  approverUser    User            @relation("UserApprovals", fields: [approverUserId], references: [id])
+}
+
+model Shipment {
+  id                   String         @id @default(uuid())
+  orderId              String         @unique
+  warehouseStaffUserId String
+  shippedDate          DateTime?
+  deliveredDate        DateTime?
+  carrier              String
+  trackingNumber       String
+  status               ShipmentStatus
+
+  order          Order     @relation(fields: [orderId], references: [id])
+  warehouseStaff User      @relation("WarehouseStaff", fields: [warehouseStaffUserId], references: [id])
+  warehouseId    String
+  warehouse      Warehouse @relation(fields: [warehouseId], references: [id])
+}
+
+model Warehouse {
+  id           String @id @default(uuid())
+  enterpriseId String
+  name         String
+  address      String
+
+  enterprise  Enterprise  @relation(fields: [enterpriseId], references: [id])
+  inventories Inventory[]
+  Shipment    Shipment[]
+}
+
+model Inventory {
+  id          String @id @default(uuid())
+  warehouseId String
+  productId   String
+  quantity    Int
+  location    String
+
+  warehouse     Warehouse       @relation(fields: [warehouseId], references: [id])
+  product       Product         @relation(fields: [productId], references: [id])
+  StockMovement StockMovement[]
+  Enterprise    Enterprise?     @relation(fields: [enterpriseId], references: [id])
+  enterpriseId  String?
+}
+
+model StockMovement {
+  id          String            @id @default(uuid())
+  inventoryId String
+  quantity    Int
+  type        StockMovementType
+  note        String?
+  createdAt   DateTime          @default(now())
+  inventory   Inventory         @relation(fields: [inventoryId], references: [id])
+}
+
+enum StockMovementType {
+  import
+  export
+  adjust
+}
+
+model Invoice {
+  id            String        @id @default(uuid())
+  orderId       String        @unique
+  invoiceNumber String
+  issueDate     DateTime
+  dueDate       DateTime
+  totalAmount   Float
+  tax           Float
+  status        InvoiceStatus
+
+  order    Order     @relation(fields: [orderId], references: [id])
+  payments Payment[]
+}
+
+model Payment {
+  id            String        @id @default(uuid())
+  invoiceId     String
+  amount        Float
+  paymentDate   DateTime
+  paymentMethod String
+  status        PaymentStatus
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id])
+}
+
+model ActivityLog {
+  id          String     @id @default(uuid())
+  userId      String
+  actionType  ActionType
+  targetType  String
+  targetId    String
+  description String
+  createdAt   DateTime   @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String?
+  adminId   String? // <== Thêm dòng này
+  token     String
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  user  User?  @relation(fields: [userId], references: [id])
+  admin Admin? @relation(fields: [adminId], references: [id])
+}
